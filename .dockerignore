@@ -1,0 +1,78 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+lib
+
+# Codeblocks
+*.cbp
+
+# Jetbrains
+.idea
+
+# Cmake
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Testing
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+
+cmake-build-debug
+
+# Build directories for conan library dependencies
+build
+
+# generated protobuf bindings
+*/prototypes
+
+# generated protobuf
+prototypes/components.proto
+.Rproj.user
+
+
+*.DS_Store
+docs/debug/*
+docs/doc/.lock
+docs/.rustc_info.json
+
+# jupyter notebook
+.ipynb_checkpoints
+
+docs/*
+whitepapers/*
+.git/*
+.travis.yml

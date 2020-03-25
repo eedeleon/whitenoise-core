@@ -43,6 +43,9 @@ pub fn get_base(eta_x: i64, eta_y: i64, eta_z: i64, precision: u32) -> Float {
 /// 0 if precision is sufficient to exactly carry out necessary operations, non-zero `u32` otherwise.
 pub unsafe fn check_precision(eta_x: &i64, eta_y: &i64, eta_z: &i64, precision: &u32,
                               min_utility: &f64, max_utility: &f64, max_size_outcome_space: &u32) -> u32 {
+    // reset flags
+    mpfr::clear_flags();
+
     // compute base
     let base = &get_base(*eta_x, *eta_y, *eta_z, *precision);
 
@@ -177,8 +180,6 @@ pub fn randomized_round(x: f64, precision: u32, min_return: f64, max_return: f64
 ///
 /// # Return
 /// Index based on sampling weights.
-///
-/// # Example
 
 pub fn normalized_sample(weights: Vec<Float>, precision: u32) -> usize {
     // get total weight

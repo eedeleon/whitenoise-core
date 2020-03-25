@@ -128,7 +128,7 @@ pub fn sample_uniform_bounded_pow_2(pow_2: i64, precision: u32) -> Float {
     // sum over vector to get final uniform output
     let unif = Float::with_val(precision, Float::sum(result_vec.iter()));
 
-    return unif
+    return unif;
 }
 
 /// Slightly altered implementation of the `randomized_round` function from Ilv19.

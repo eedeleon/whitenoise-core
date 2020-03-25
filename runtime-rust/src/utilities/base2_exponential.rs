@@ -3,10 +3,84 @@ use whitenoise_validator::errors::*;
 // use ieee754::Ieee754;
 use std::{cmp, f64::consts, f64::MAX, char};
 use rug::rand::{ThreadRandGen, ThreadRandState};
-use rug::Float;
+use rug::{Float, ops::Pow};
+use gmp_mpfr_sys::mpfr;
 use math::round;
 
 use crate::utilities::utilities;
+
+/// Calculate base from `eta` values.
+///
+/// # Arguments
+/// * `eta_x` - Privacy parameter.
+/// * `eta_y` - Privacy parameter.
+/// * `eta_z` - Privacy parameter.
+/// * `precision` - Bits of precision with which you want the output generated.
+///
+/// # Return
+/// Functional base for base2 exponential mechanism.
+pub fn get_base(eta_x: i64, eta_y: i64, eta_z: i64, precision: u32) -> Float {
+    let base_p1 = Float::with_val(precision, eta_x.pow(eta_z as u32));
+    let base_p2 = Float::with_val(precision, Float::with_val(precision, -(eta_y * eta_z)).exp2());
+    let base = Float::with_val(precision, base_p1 * base_p2);
+    return base;
+}
+
+/// Check for sufficient precision to exactly carry out necessary operations.
+///
+/// Returns 0 if yes, non-zero otherwise (depending on the flag that is raised).
+///
+/// # Arguments
+/// * `eta_x` - Privacy parameter.
+/// * `eta_y` - Privacy parameter.
+/// * `eta_z` - Privacy parameter.
+/// * `precision` - Bits of precision with which you want the output generated.
+/// * `min_utility` - Minimum possible utility value.
+/// * `max_utility` - Maximum possible utility value.
+/// * `max_size_outcome_space` - Maximum size of the outcome space.
+
+pub unsafe fn check_precision(eta_x: &i64, eta_y: &i64, eta_z: &i64, precision: &u32,
+                              min_utility: &f64, max_utility: &f64, max_size_outcome_space: &u32) -> u32 {
+    // compute base
+    let base = &get_base(*eta_x, *eta_y, *eta_z, *precision);
+
+    // compute base^({min/max return})
+    let min_weight = Float::with_val(*precision, base.pow(*min_utility));
+    let max_weight = Float::with_val(*precision, base.pow(*max_utility));
+    let mm = Float::with_val(*precision, &min_weight + &max_weight);
+
+    // compute max/min total utility
+    let min_total = Float::with_val(*precision, &min_weight * &Float::with_val(*precision, *max_size_outcome_space));
+    let max_total = Float::with_val(*precision, &max_weight * &Float::with_val(*precision, *max_size_outcome_space));
+
+    // add min/max total utilities
+    let max_min_total = Float::with_val(*precision, max_total + min_weight);
+    let min_max_total = Float::with_val(*precision, min_total + max_weight);
+
+    // get raised flags and return whether or not computations were exact
+    let flags = mpfr::flags_save();
+    return mpfr::flags_test(flags);
+}
+
+pub unsafe fn get_sufficient_precision(eta_x: &i64, eta_y: &i64, eta_z: &i64,
+                                       min_return: &f64, max_return: &f64, max_size_outcome_space: &u32) -> u32 {
+    let mut precision = 52_u32;
+    let sufficient_precision = false;
+    let mut flag;
+    while sufficient_precision == false {
+        // ensure that desired precision is supported
+        assert!(precision <= rug::float::prec_max());
+
+        // check if precision is sufficient for exact operations
+        flag = check_precision(eta_x, eta_y, eta_z, &precision, min_return, max_return, max_size_outcome_space);
+        if flag == 0 {
+            break;
+        } else {
+            precision = 2 * precision;
+        }
+    }
+    return precision;
+}
 
 /// Implementation of the `get_random_value` function from Ilv19.
 ///
@@ -90,17 +164,15 @@ pub fn randomized_round(x: f64, precision: u32, min_return: f64, max_return: f64
 /// Index based on sampling weights.
 ///
 /// # Example
-pub fn normalized_sample(weights: Vec<f64>, precision: u32) -> usize {
-    // generate Float version of weights
-    let weights_Float: Vec<Float> = weights.iter().map(|x| Float::with_val(52, x)).collect();
 
+pub fn normalized_sample(weights: Vec<Float>, precision: u32) -> usize {
     // get total weight
-    let total_weight = Float::with_val(52, Float::sum(weights_Float.iter()));
+    let total_weight = Float::with_val(52, Float::sum(weights.iter()));
 
     // generate cumulative weights
     let mut cumulative_weight_vec: Vec<rug::Float> = Vec::with_capacity(weights.len() as usize);
     for i in 0..weights.len() {
-        cumulative_weight_vec.push( Float::with_val(53, Float::sum(weights_Float[0..(i+1)].iter())) );
+        cumulative_weight_vec.push( Float::with_val(53, Float::sum(weights[0..(i+1)].iter())) );
     }
 
     // get maximum power of two needed for sampling
@@ -118,7 +190,7 @@ pub fn normalized_sample(weights: Vec<f64>, precision: u32) -> usize {
         s = sample_uniform_bounded_pow_2(pow_2, precision);
     }
 
-    // return the associated elements
+    // return the index of an element based on where it falls in the cumulative distribution of weights
     let mut index = 0;
     for i in 0..weights.len() {
         if cumulative_weight_vec[i].to_f64() >= s {

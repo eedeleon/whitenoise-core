@@ -7,6 +7,7 @@ use rug::{float::Constant, Float, ops::Pow};
 
 use crate::utilities::noise;
 use crate::utilities::utilities;
+use crate::utilities::base2_exponential;
 
 /// Returns noise drawn according to the Laplace mechanism
 ///
@@ -148,4 +149,36 @@ pub fn exponential_mechanism<T>(
     let elem: T = utilities::sample_from_set(&candidate_vec, &probability_vec)?;
 
     Ok(elem)
+}
+
+pub fn base2_exponential_mechanism<T>(
+                        eta_x: &i64,
+                        eta_y: &i64,
+                        eta_z: &i64,
+                        min_utility: &f64,
+                        max_utility: &f64,
+                        candidate_set: ArrayD<T>,
+                        utility: &dyn Fn(&T) -> f64
+                         ) -> Result<T> where T: Copy, {
+    // get sufficient precision
+    unsafe {
+        // get max size of the outcome space
+        let max_size_outcome_space = candidate_set.len() as u32;
+
+        // calculate necessary precision
+        let precision = base2_exponential::get_sufficient_precision(eta_x, eta_y, eta_z, min_utility, max_utility, &max_size_outcome_space);
+
+        // calculate base
+        let base: Float = base2_exponential::get_base(*eta_x, *eta_y, *eta_z, precision.clone());
+
+        // get utilities
+        let utilities: Vec<Float> = candidate_set.iter().map(|x| Float::with_val(precision.clone(), utility(x))).collect();
+
+        // get weights
+        let weights: Vec<Float> = utilities.iter().map(|u| base.clone().pow(u)).collect();
+
+        // sample from set based on weights
+        let sampling_index = base2_exponential::normalized_sample(weights, precision.clone());
+        Ok(candidate_set[sampling_index])
+    }
 }

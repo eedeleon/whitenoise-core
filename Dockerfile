@@ -8,10 +8,17 @@ RUN apt-get update && \
 
 WORKDIR /usr/src/whitenoise-core
 
-COPY ./validator-rust ./validator-rust
 COPY ./prototypes ./prototypes
+COPY ./validator-rust ./validator-rust
+COPY ./runtime-rust ./runtime-rust
+COPY ./bindings-python ./bindings-python
 
-WORKDIR /usr/src/whitenoise-core/c
+
+#WORKDIR /usr/src/whitenoise-core/validator-rust
+#RUN "cargo build"
+
+WORKDIR /usr/src/whitenoise-core/runtime-rust
+RUN cargo build
 
 #RUN cargo install --path .
 

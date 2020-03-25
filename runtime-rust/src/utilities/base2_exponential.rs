@@ -38,7 +38,9 @@ pub fn get_base(eta_x: i64, eta_y: i64, eta_z: i64, precision: u32) -> Float {
 /// * `min_utility` - Minimum possible utility value.
 /// * `max_utility` - Maximum possible utility value.
 /// * `max_size_outcome_space` - Maximum size of the outcome space.
-
+///
+/// # Return
+/// 0 if precision is sufficient to exactly carry out necessary operations, non-zero `u32` otherwise.
 pub unsafe fn check_precision(eta_x: &i64, eta_y: &i64, eta_z: &i64, precision: &u32,
                               min_utility: &f64, max_utility: &f64, max_size_outcome_space: &u32) -> u32 {
     // compute base
@@ -62,9 +64,22 @@ pub unsafe fn check_precision(eta_x: &i64, eta_y: &i64, eta_z: &i64, precision: 
     return mpfr::flags_test(flags);
 }
 
+/// Calculate upper bound on sufficient precision for base2 exponential mechanism.
+///
+/// # Arguments
+/// * `eta_x` - Privacy parameter.
+/// * `eta_y` - Privacy parameter.
+/// * `eta_z` - Privacy parameter.
+/// * `precision` - Bits of precision with which you want the output generated.
+/// * `min_utility` - Minimum possible utility value.
+/// * `max_utility` - Maximum possible utility value.
+/// * `max_size_outcome_space` - Maximum size of the outcome space.
+///
+/// # Return
+/// Upper bound on sufficient precision.
 pub unsafe fn get_sufficient_precision(eta_x: &i64, eta_y: &i64, eta_z: &i64,
-                                       min_return: &f64, max_return: &f64, max_size_outcome_space: &u32) -> u32 {
-    let mut precision = 52_u32;
+                                       min_utility: &f64, max_utility: &f64, max_size_outcome_space: &u32) -> u32 {
+    let mut precision = 16_u32;
     let sufficient_precision = false;
     let mut flag;
     while sufficient_precision == false {
@@ -72,7 +87,7 @@ pub unsafe fn get_sufficient_precision(eta_x: &i64, eta_y: &i64, eta_z: &i64,
         assert!(precision <= rug::float::prec_max());
 
         // check if precision is sufficient for exact operations
-        flag = check_precision(eta_x, eta_y, eta_z, &precision, min_return, max_return, max_size_outcome_space);
+        flag = check_precision(eta_x, eta_y, eta_z, &precision, min_utility, max_utility, max_size_outcome_space);
         if flag == 0 {
             break;
         } else {

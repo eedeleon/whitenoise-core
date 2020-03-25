@@ -102,6 +102,10 @@ pub fn simple_geometric_mechanism(epsilon: &f64, sensitivity: &f64, count_min: &
 
 /// Returns data element according to the Exponential mechanism.
 ///
+/// NOTE: This implementation is likely non-private because of the difference between theory on
+///       the real numbers and floating-point numbers. See [Ilvento 2019](https://arxiv.org/abs/1912.04222) for
+///       more information on the problem and a proposed fix.
+///
 /// # Arguments
 ///
 /// * `epsilon` - Multiplicative privacy loss parameter.
@@ -109,9 +113,8 @@ pub fn simple_geometric_mechanism(epsilon: &f64, sensitivity: &f64, count_min: &
 /// * `candidate_set` - Data from which user wants an element returned.
 /// * `utility` - Utility function used within the exponential mechanism.
 ///
-/// NOTE: This implementation is likely non-private because of the difference between theory on
-///       the real numbers and floating-point numbers. See [Ilvento 2019](https://arxiv.org/abs/1912.04222) for
-///       more information on the problem and a proposed fix.
+/// # Return
+/// An element from `candidate_set`, chosen with probability proportional to its utility.
 ///
 /// # Example
 /// ```
@@ -125,8 +128,8 @@ pub fn simple_geometric_mechanism(epsilon: &f64, sensitivity: &f64, count_min: &
 ///
 /// // create sample data
 /// let xs: ArrayD<f64> = arr1(&[1., 2., 3., 4., 5.]).into_dyn();
-/// let ans = exponential_mechanism(&1.0, &1.0, xs, &utility);
-/// # ans.unwrap();
+/// let ans = exponential_mechanism(&1.0, &1.0, xs, &utility).unwrap();
+/// assert!(ans == 1. || ans == 2. || ans == 3. || ans == 4. || ans == 5.);
 /// ```
 pub fn exponential_mechanism<T>(
                          epsilon: &f64,
@@ -151,6 +154,35 @@ pub fn exponential_mechanism<T>(
     Ok(elem)
 }
 
+/// Returns data element according to base2 Exponential mechanism.
+///
+/// # Arguments
+/// * `eta_x` - Privacy parameter.
+/// * `eta_y` - Privacy parameter.
+/// * `eta_z` - Privacy parameter.
+/// * `min_utility` - Minimum possible utility value.
+/// * `max_utility` - Maximum possible utility value.
+/// * `candidate_set` - Data from which user wants an element returned.
+/// * `utility` - Utility function used within the exponential mechanism.
+///
+/// # Return
+/// An element from `candidate_set`, chosen with probability proportional to its utility.
+///
+/// # Example
+/// ```
+/// use ndarray::prelude::*;
+/// use whitenoise_runtime::utilities::mechanisms::base2_exponential_mechanism;
+/// // create utility function
+/// pub fn utility(x:&f64) -> f64 {
+///     let util = *x as f64;
+///     return util;
+/// }
+///
+/// // create sample data
+/// let xs: ArrayD<f64> = arr1(&[1., 2., 3., 4., 5.]).into_dyn();
+/// let ans = base2_exponential_mechanism(&1, &1, &1, &1.0, &5.0, xs, &utility).unwrap();
+/// assert!(ans == 1. || ans == 2. || ans == 3. || ans == 4. || ans == 5.);
+/// ```
 pub fn base2_exponential_mechanism<T>(
                         eta_x: &i64,
                         eta_y: &i64,
@@ -160,7 +192,6 @@ pub fn base2_exponential_mechanism<T>(
                         candidate_set: ArrayD<T>,
                         utility: &dyn Fn(&T) -> f64
                          ) -> Result<T> where T: Copy, {
-    // get sufficient precision
     unsafe {
         // get max size of the outcome space
         let max_size_outcome_space = candidate_set.len() as u32;

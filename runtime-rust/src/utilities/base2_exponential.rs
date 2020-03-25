@@ -106,7 +106,7 @@ pub unsafe fn get_sufficient_precision(eta_x: &i64, eta_y: &i64, eta_z: &i64,
 /// `pow_2` and `precision` are equivalent to `start_pow`+1 and `p` from the original code.
 ///
 /// # Arguments
-/// * `pow_2` - The power of two that will be an upper bound on the generated values.
+/// * `pow_2` - `k` such that `2^k` will be an upper bound on the generated values.
 /// * `precision` - Bits of precision with which you want the output generated.
 ///
 /// # Example

@@ -109,7 +109,7 @@ pub unsafe fn get_sufficient_precision(eta_x: &i64, eta_y: &i64, eta_z: &i64,
 /// # Example
 /// ```
 /// use whitenoise_runtime::utilities::base2_exponential::sample_uniform_bounded_pow_2;
-/// let unif = sample_uniform_bounded_pow_2(3, 52).to_f64();
+/// let unif = sample_uniform_bounded_pow_2(3, 53).to_f64();
 /// assert!(unif >= 0. && unif < 8.);
 /// ```
 pub fn sample_uniform_bounded_pow_2(pow_2: i64, precision: u32) -> Float {
@@ -153,7 +153,7 @@ pub fn sample_uniform_bounded_pow_2(pow_2: i64, precision: u32) -> Float {
 ///
 /// # Example
 /// use whitenoise_runtime::utilities::base2_exponential::randomized_round;
-/// let rounded = randomized_round(3.5, 52, 2., 5.);
+/// let rounded = randomized_round(3.5, 53, 2., 5.);
 /// assert!(rounded == 3. || rounded == 4.)
 pub fn randomized_round(x: f64, precision: u32, min_return: f64, max_return: f64) -> f64 {
     let unif = sample_uniform_bounded_pow_2(0, precision);
@@ -182,7 +182,7 @@ pub fn randomized_round(x: f64, precision: u32, min_return: f64, max_return: f64
 
 pub fn normalized_sample(weights: Vec<Float>, precision: u32) -> usize {
     // get total weight
-    let total_weight = Float::with_val(52, Float::sum(weights.iter()));
+    let total_weight = Float::with_val(53, Float::sum(weights.iter()));
 
     // generate cumulative weights
     let mut cumulative_weight_vec: Vec<rug::Float> = Vec::with_capacity(weights.len() as usize);
@@ -192,15 +192,15 @@ pub fn normalized_sample(weights: Vec<Float>, precision: u32) -> usize {
 
     // get maximum power of two needed for sampling
     let mut pow_2: i64 = 0;
-    while (Float::with_val(52, pow_2)).exp2() > total_weight.to_f64() {
+    while (Float::with_val(53, pow_2)).exp2() > total_weight.to_f64() {
         pow_2 = pow_2 - 1;
     }
-    while (Float::with_val(52, pow_2)).exp2() <= total_weight.to_f64() {
+    while (Float::with_val(53, pow_2)).exp2() <= total_weight.to_f64() {
         pow_2 = pow_2 + 1;
     }
 
     // sample a random number from [0, 2^pow_2)
-    let mut s = Float::with_val(52, std::f64::MAX);
+    let mut s = Float::with_val(53, std::f64::MAX);
     while s > total_weight {
         s = sample_uniform_bounded_pow_2(pow_2, precision);
     }

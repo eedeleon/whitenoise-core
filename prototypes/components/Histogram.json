@@ -22,16 +22,6 @@
       "default": "None",
       "description": "The value to which elements not included in `categories` will be mapped for each column of the data. Used only if `categories` is not `None`."
     },
-    "min": {
-      "type": "Array",
-      "default": "0",
-      "description": "Estimated minimum possible size of bin counts."
-    },
-    "max": {
-      "type": "Array",
-      "default": "None",
-      "description": "Estimated maximum possible size of bin counts."
-    },
     "inclusive_left": {
       "nature": [
         "categorical"

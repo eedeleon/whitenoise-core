@@ -28,6 +28,8 @@ pub fn get_base(eta_x: i64, eta_y: i64, eta_z: i64, precision: u32) -> Float {
 
 /// Check for sufficient precision to exactly carry out necessary operations.
 ///
+/// Differs slightly from Ilv19 in that utility can be negative.
+///
 /// Returns 0 if yes, non-zero otherwise (depending on the flag that is raised).
 ///
 /// # Arguments
@@ -68,6 +70,8 @@ pub unsafe fn check_precision(eta_x: &i64, eta_y: &i64, eta_z: &i64, precision: 
 }
 
 /// Calculate upper bound on sufficient precision for base2 exponential mechanism.
+///
+/// Differs slightly from Ilv19 in that utility can be negative.
 ///
 /// # Arguments
 /// * `eta_x` - Privacy parameter.

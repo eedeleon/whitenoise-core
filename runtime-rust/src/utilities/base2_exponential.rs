@@ -7,7 +7,7 @@ use rug::{Float, ops::Pow};
 use gmp_mpfr_sys::mpfr;
 use math::round;
 
-use crate::utilities::utilities;
+use crate::utilities;
 
 /// Calculate base from `eta` values.
 ///
@@ -190,10 +190,7 @@ pub fn normalized_sample(weights: Vec<Float>, precision: u32) -> usize {
     let total_weight = Float::with_val(53, Float::sum(weights.iter()));
 
     // generate cumulative weights
-    let mut cumulative_weight_vec: Vec<rug::Float> = Vec::with_capacity(weights.len() as usize);
-    for i in 0..weights.len() {
-        cumulative_weight_vec.push( Float::with_val(53, Float::sum(weights[0..(i+1)].iter())) );
-    }
+    let mut cumulative_weight_vec: Vec<rug::Float> = (0..weights.len()).map(|i| Float::with_val(53, Float::sum(weights[0..(i+1)].iter()))).collect();
 
     // get maximum power of two needed for sampling
     let mut pow_2: i64 = 0;

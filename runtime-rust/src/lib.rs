@@ -1,4 +1,8 @@
-/// The Whitenoise rust runtime is an execution engine for evaluating differentially private analyses.
+//! The Whitenoise rust runtime is an execution engine for evaluating differentially private analyses.
+//! 
+//! The runtime contains implementations of basic data transformations and aggregations, 
+//! statistics, and privatizing mechanisms. These functions are combined in the 
+//! Whitenoise validator to create more complex differentially private analyses. 
 
 extern crate whitenoise_validator;
 
@@ -19,6 +23,8 @@ pub fn release(
     request: &proto::RequestRelease
 ) -> Result<proto::Release> {
     base::execute_graph(
-        request.analysis.as_ref().ok_or::<Error>("analysis must be defined".into())?,
-        request.release.as_ref().ok_or::<Error>("release must be defined".into())?)
+        request.analysis.as_ref()
+            .ok_or_else(|| Error::from("analysis must be defined"))?,
+        request.release.as_ref()
+            .ok_or_else(|| Error::from("release must be defined"))?)
 }

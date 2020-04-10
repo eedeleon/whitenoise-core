@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use crate::{proto, base};
 
 use crate::components::{Component, Aggregator};
-use crate::base::{Value, NodeProperties, AggregatorProperties, SensitivitySpace, ValueProperties};
+use crate::base::{Value, NodeProperties, AggregatorProperties, SensitivitySpace, ValueProperties, DataType};
 use crate::utilities::prepend;
 use ndarray::prelude::*;
 
@@ -28,21 +28,19 @@ impl Component for proto::Variance {
             properties: properties.clone()
         });
 
+        if data_property.data_type != DataType::F64 {
+            return Err("data: atomic type must be float".into())
+        }
+
         data_property.num_records = Some(1);
         data_property.nature = None;
 
         Ok(data_property.into())
     }
-
-    fn get_names(
-        &self,
-        _properties: &NodeProperties,
-    ) -> Result<Vec<String>> {
-        Err("get_names not implemented".into())
-    }
 }
 
 impl Aggregator for proto::Variance {
+    /// Variance sensitivities [are backed by the the proofs here](https://github.com/opendifferentialprivacy/whitenoise-core/blob/955703e3d80405d175c8f4642597ccdf2c00332a/whitepapers/sensitivities/variance/variance.pdf)
     fn compute_sensitivity(
         &self,
         privacy_definition: &proto::PrivacyDefinition,
@@ -68,7 +66,7 @@ impl Aggregator for proto::Variance {
 
                 use proto::privacy_definition::Neighboring;
                 let neighboring_type = Neighboring::from_i32(privacy_definition.neighboring)
-                    .ok_or::<Error>("neighboring definition must be either \"AddRemove\" or \"Substitute\"".into())?;
+                    .ok_or_else(|| Error::from("neighboring definition must be either \"AddRemove\" or \"Substitute\""))?;
 
                 let scaling_constant: f64 = match k {
                     1 | 2 => match neighboring_type {

@@ -18,18 +18,16 @@ impl Component for proto::Reshape {
         let mut data_property = properties.get("data")
             .ok_or("data: missing")?.array()
             .map_err(prepend("data:"))?.clone();
+        data_property.assert_is_not_aggregated()?;
+        data_property.assert_is_releasable()?;
 
-        if !data_property.releasable {
-            return Err("data must be public/releasable to reshape".into())
-        }
-
-        data_property.num_records = match self.shape.len().clone() {
+        data_property.num_records = match self.shape.len() {
             0 => Some(1),
             1 | 2 => Some(self.shape[0] as i64),
             _ => return Err("dimensionality may not be greater than 2".into())
         };
 
-        data_property.num_columns = match self.shape.len().clone() {
+        data_property.num_columns = match self.shape.len() {
             0 | 1 => Some(1),
             2 => Some(self.shape[1] as i64),
             _ => return Err("dimensionality may not be greater than 2".into())
@@ -49,10 +47,5 @@ impl Component for proto::Reshape {
         Ok(data_property.into())
     }
 
-    fn get_names(
-        &self,
-        _properties: &base::NodeProperties,
-    ) -> Result<Vec<String>> {
-        Err("get_names not implemented".into())
-    }
+
 }

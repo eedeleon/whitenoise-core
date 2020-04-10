@@ -1,3 +1,12 @@
+//! The Whitenoise rust validator contains methods for evaluating and constructing 
+//! differentially private analyses.
+//! 
+//! The validator defines a set of statically checkable properties that are 
+//! necessary for a differentially private analysis, and then checks that the submitted analysis
+//! satisfies the properties.
+//!
+//! The validator also takes simple components from the Whitenoise runtime and combines them 
+//! into more complex mechanisms.
 
 // `error_chain!` can recurse deeply
 #![recursion_limit = "1024"]
@@ -18,6 +27,8 @@ pub mod base;
 pub mod utilities;
 pub mod components;
 pub mod ffi;
+pub mod docs;
+
 // import all trait implementations
 use crate::components::*;
 use itertools::Itertools;
@@ -56,16 +67,16 @@ pub fn validate_analysis(
     request: &proto::RequestValidateAnalysis
 ) -> Result<proto::response_validate_analysis::Validated> {
     let analysis = request.analysis.clone()
-        .ok_or::<Error>("analysis must be defined".into())?;
+        .ok_or_else(|| Error::from("analysis must be defined"))?;
     let release = request.release.clone()
-        .ok_or::<Error>("release must be defined".into())?;
+        .ok_or_else(|| Error::from("release must be defined"))?;
 
     utilities::propagate_properties(&analysis, &release)?;
 
-    return Ok(proto::response_validate_analysis::Validated {
+    Ok(proto::response_validate_analysis::Validated {
         value: true,
         message: "The analysis is valid.".to_string(),
-    });
+    })
 }
 
 
@@ -77,9 +88,9 @@ pub fn compute_privacy_usage(
     request: &proto::RequestComputePrivacyUsage
 ) -> Result<proto::PrivacyUsage> {
     let analysis = request.analysis.as_ref()
-        .ok_or::<Error>("analysis must be defined".into())?;
+        .ok_or_else(|| Error::from("analysis must be defined"))?;
     let release = request.release.as_ref()
-        .ok_or::<Error>("release must be defined".into())?;
+        .ok_or_else(|| Error::from("release must be defined"))?;
 
     let (_graph_properties, graph) = utilities::propagate_properties(analysis, release)?;
 
@@ -92,7 +103,7 @@ pub fn compute_privacy_usage(
 
     // TODO: this should probably return a proto::PrivacyUsage with zero based on the privacy definition
     usage_option
-        .ok_or::<Error>("no information is released; privacy usage is none".into())
+        .ok_or_else(|| Error::from("no information is released; privacy usage is none"))
 }
 
 
@@ -101,9 +112,9 @@ pub fn generate_report(
     request: &proto::RequestGenerateReport
 ) -> Result<String> {
     let analysis = request.analysis.as_ref()
-        .ok_or::<Error>("analysis must be defined".into())?;
+        .ok_or_else(|| Error::from("analysis must be defined"))?;
     let release = request.release.as_ref()
-        .ok_or::<Error>("release must be defined".into())?;
+        .ok_or_else(|| Error::from("release must be defined"))?;
 
     let graph = analysis.computation_graph.to_owned()
         .ok_or("the computation graph must be defined in an analysis")?
@@ -112,23 +123,58 @@ pub fn generate_report(
     let (graph_properties, _graph_expanded) = utilities::propagate_properties(analysis, release)?;
     let release = utilities::serial::parse_release(&release)?;
 
+    // variable names
+    let mut nodes_varnames: HashMap<u32, Vec<String>> = HashMap::new();
+
+    utilities::get_traversal(&graph)?.iter().map(|node_id| {
+
+        let component: proto::Component = graph.get(&node_id).unwrap().to_owned();
+        let public_arguments = utilities::get_input_arguments(&component, &release)?;
+
+        // variable names for argument nodes
+        let mut arguments_vars: HashMap<String, Vec<String>> = HashMap::new();
+
+        // iterate through argument nodes
+        for (field_id, field) in &component.arguments {
+            // get variable names corresponding to that argument
+            if let Some(arg_vars) = nodes_varnames.get(field) {
+                arguments_vars.insert(field_id.clone(), arg_vars.clone());
+            }
+        }
+
+        // get variable names for this node
+        let node_vars = component.variant
+            .ok_or_else(|| Error::from("component variant must be defined"))?
+            .get_names(&public_arguments, &arguments_vars, &release.get(node_id));
+
+        // update names in hashmap
+        node_vars.map(|v| nodes_varnames.insert(node_id.clone(), v)).ok();
+
+        Ok(())
+    }).collect::<Result<()>>()
+        // ignore any error- still generate the report even if node names could not be derived
+        .ok();
+
     let release_schemas = graph.iter()
         .map(|(node_id, component)| {
             let public_arguments = utilities::get_input_arguments(&component, &release)?;
             let input_properties = utilities::get_input_properties(&component, &graph_properties)?;
+            let variable_names = nodes_varnames.get(&node_id);
             // ignore nodes without released values
             let node_release = match release.get(node_id) {
                 Some(node_release) => node_release,
                 None => return Ok(None)
             };
             component.variant.as_ref()
-                .ok_or::<Error>("component variant must be defined".into())?
+                .ok_or_else(|| Error::from("component variant must be defined"))?
                 .summarize(
-                &node_id,
-                &component,
-                &public_arguments,
-                &input_properties,
-                &node_release)
+                    &node_id,
+                    &component,
+                    &public_arguments,
+                    &input_properties,
+                    &node_release,
+                    variable_names,
+                )
         })
         .collect::<Result<Vec<Option<Vec<utilities::json::JSONRelease>>>>>()?.into_iter()
         .filter_map(|v| v).flat_map(|v| v)
@@ -148,19 +194,19 @@ pub fn accuracy_to_privacy_usage(
     request: &proto::RequestAccuracyToPrivacyUsage
 ) -> Result<proto::PrivacyUsages> {
     let component: &proto::Component = request.component.as_ref()
-        .ok_or::<Error>("component must be defined".into())?;
+        .ok_or_else(|| Error::from("component must be defined"))?;
     let privacy_definition: &proto::PrivacyDefinition = request.privacy_definition.as_ref()
-        .ok_or::<Error>("privacy definition must be defined".into())?;
+        .ok_or_else(|| Error::from("privacy definition must be defined"))?;
     let properties: HashMap<String, base::ValueProperties> = request.properties.iter()
         .map(|(k, v)| (k.to_owned(), utilities::serial::parse_value_properties(&v)))
         .collect();
     let accuracies: &proto::Accuracies = request.accuracies.as_ref()
-        .ok_or::<Error>("accuracies must be defined".into())?;
+        .ok_or_else(|| Error::from("accuracies must be defined"))?;
 
     // TODO: expand component and prop accuracy
     Ok(proto::PrivacyUsages {
         values: component.variant.as_ref()
-            .ok_or::<Error>("component variant must be defined".into())?
+            .ok_or_else(|| Error::from("component variant must be defined"))?
             .accuracy_to_privacy_usage(privacy_definition, &properties, accuracies)?.unwrap()
     })
 }
@@ -173,16 +219,16 @@ pub fn privacy_usage_to_accuracy(
     request: &proto::RequestPrivacyUsageToAccuracy
 ) -> Result<proto::Accuracies> {
     let component: &proto::Component = request.component.as_ref()
-        .ok_or::<Error>("component must be defined".into())?;
+        .ok_or_else(|| Error::from("component must be defined"))?;
     let privacy_definition: &proto::PrivacyDefinition = request.privacy_definition.as_ref()
-        .ok_or::<Error>("privacy definition must be defined".into())?;
+        .ok_or_else(|| Error::from("privacy definition must be defined"))?;
     let properties: HashMap<String, base::ValueProperties> = request.properties.iter()
         .map(|(k, v)| (k.to_owned(), utilities::serial::parse_value_properties(&v)))
         .collect();
 
     Ok(proto::Accuracies {
         values: component.variant.as_ref()
-            .ok_or::<Error>("component variant must be defined".into())?
+            .ok_or_else(|| Error::from("component variant must be defined"))?
             .privacy_usage_to_accuracy(privacy_definition, &properties, &request.alpha)?.unwrap()
     })
 }
@@ -191,13 +237,15 @@ pub fn get_properties(
     request: &proto::RequestGetProperties
 ) -> Result<proto::GraphProperties> {
     let (properties, _graph) = utilities::propagate_properties(
-        request.analysis.as_ref().ok_or::<Error>("analysis must be defined".into())?,
-        request.release.as_ref().ok_or::<Error>("release must be defined".into())?,
+        request.analysis.as_ref()
+            .ok_or_else(|| Error::from("analysis must be defined"))?,
+        request.release.as_ref()
+            .ok_or_else(|| Error::from("release must be defined"))?,
     )?;
 
     Ok(proto::GraphProperties {
         properties: properties.iter()
-            .map(|(node_id, properties)| (node_id.clone(), serialize_value_properties(properties)))
+            .map(|(node_id, properties)| (*node_id, serialize_value_properties(properties)))
             .collect::<HashMap<u32, proto::ValueProperties>>()
     })
 }
@@ -212,9 +260,9 @@ pub fn expand_component(
 ) -> Result<proto::ComponentExpansion> {
     _expand_component(
         request.privacy_definition.as_ref()
-            .ok_or::<Error>("privacy definition must be defined".into())?,
+            .ok_or_else(|| Error::from("privacy definition must be defined"))?,
         request.component.as_ref()
-            .ok_or::<Error>("component must be defined".into())?,
+            .ok_or_else(|| Error::from("component must be defined"))?,
         &request.properties.clone(),
         &request.arguments.iter()
             .map(|(k, v)| Ok((k.to_owned(), utilities::serial::parse_value(&v)?)))
@@ -228,7 +276,7 @@ pub fn _expand_component(
     privacy_definition: &proto::PrivacyDefinition,
     component: &proto::Component,
     properties: &HashMap<String, proto::ValueProperties>,
-    arguments: &HashMap<String, base::Value>,
+    public_arguments: &HashMap<String, base::Value>,
     component_id: &u32,
     maximum_id: &u32,
 ) -> Result<proto::ComponentExpansion> {
@@ -236,12 +284,12 @@ pub fn _expand_component(
         .map(|(k, v)| (k.to_owned(), utilities::serial::parse_value_properties(&v)))
         .collect();
 
-    for (k, v) in arguments {
+    for (k, v) in public_arguments {
         properties.insert(k.clone(), utilities::inference::infer_property(v)?);
     }
 
     let result = component.variant.as_ref()
-        .ok_or::<Error>("component variant must be defined".into())?.expand_component(
+        .ok_or_else(|| Error::from("component variant must be defined"))?.expand_component(
         privacy_definition,
         component,
         &properties,
@@ -252,8 +300,8 @@ pub fn _expand_component(
     let mut patch_properties = result.properties;
     if result.traversal.is_empty() {
         let propagated_property = component.clone().variant.as_ref()
-            .ok_or::<Error>("component variant must be defined".into())?
-            .propagate_property(&privacy_definition, &arguments, &properties)
+            .ok_or_else(|| Error::from("component variant must be defined"))?
+            .propagate_property(&privacy_definition, &public_arguments, &properties)
             .chain_err(|| format!("at node_id {:?}", component_id))?;
 
         patch_properties.insert(component_id.to_owned(), utilities::serial::serialize_value_properties(&propagated_property));

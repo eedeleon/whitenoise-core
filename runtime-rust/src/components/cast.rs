@@ -11,10 +11,8 @@ use whitenoise_validator::utilities::get_argument;
 
 impl Evaluable for proto::Cast {
     fn evaluate(&self, arguments: &NodeArguments) -> Result<Value> {
-        let output_type = get_argument(&arguments, "type")?.first_string()?;
-
         let data = get_argument(&arguments, "data")?.array()?;
-        match output_type.to_lowercase().as_str() {
+        match self.r#type.to_lowercase().as_str() {
             // if casting to bool, identify what value should map to true, then cast
             "bool" => {
                 let true_label = get_argument(&arguments, "true_label")?.array()?;
@@ -47,7 +45,7 @@ impl Evaluable for proto::Cast {
 pub fn cast_bool(data: &Array, positive: &Array) -> Result<ArrayD<bool>> {
     fn compare<T: PartialEq + Clone>(data: &ArrayD<T>, label: &ArrayD<T>) -> Result<ArrayD<bool>> {
         let label = label.first()
-            .ok_or::<Error>("label cannot be empty".into())?;
+            .ok_or_else(|| Error::from("label cannot be empty"))?;
         Ok(data.mapv(|v| v == *label))
     };
 

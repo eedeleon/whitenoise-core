@@ -6,22 +6,29 @@ use crate::{proto};
 
 use crate::components::{Component, Aggregator};
 use crate::base::{Value, NodeProperties, AggregatorProperties, SensitivitySpace, ValueProperties, DataType, NatureContinuous, Nature, Vector1DNull};
-use crate::utilities::{prepend};
 use ndarray::{arr1};
 
 
 impl Component for proto::Count {
-    // modify min, max, n, categories, is_public, non-null, etc. based on the arguments and component
     fn propagate_property(
         &self,
         _privacy_definition: &proto::PrivacyDefinition,
         _public_arguments: &HashMap<String, Value>,
         properties: &NodeProperties,
     ) -> Result<ValueProperties> {
-        let mut data_property = properties.get("data")
-            .ok_or("data: missing")?.array()
-            .map_err(prepend("data:"))?.clone();
+        let mut data_property = match properties.get("data").ok_or("data: missing")?.clone() {
+            ValueProperties::Array(data_property) => data_property,
+            ValueProperties::Hashmap(data_property) => {
+                if !data_property.columnar {
+                    return Err("Count may only be applied to arrays or columnar hashmaps (dataframes)".into())
+                }
+                data_property.properties.values().first()
+                    .ok_or_else(|| Error::from("dataframe must have at least one column"))?.array()?.to_owned()
+            },
+            ValueProperties::Jagged(_) => return Err("Count is not implemented on jagged arrays".into())
+        };
 
+        data_property.assert_is_not_aggregated()?;
         data_property.num_records = Some(1);
         data_property.num_columns = Some(1);
 
@@ -40,27 +47,26 @@ impl Component for proto::Count {
 
         Ok(data_property.into())
     }
-
-    fn get_names(
-        &self,
-        _properties: &NodeProperties,
-    ) -> Result<Vec<String>> {
-        Err("get_names not implemented".into())
-    }
 }
 
 impl Aggregator for proto::Count {
+    /// Count query sensitivities [are backed by the the proofs here](https://github.com/opendifferentialprivacy/whitenoise-core/blob/955703e3d80405d175c8f4642597ccdf2c00332a/whitepapers/sensitivities/counts/counts.pdf).
     fn compute_sensitivity(
         &self,
         privacy_definition: &proto::PrivacyDefinition,
         properties: &NodeProperties,
         sensitivity_type: &SensitivitySpace
     ) -> Result<Value> {
-        let data_property = properties.get("data")
-            .ok_or("data: missing")?.array()
-            .map_err(prepend("data:"))?.clone();
 
-        data_property.assert_is_not_aggregated()?;
+        let num_records = match properties.get("data")
+            .ok_or("data: missing")? {
+            ValueProperties::Array(value) => {
+                value.assert_is_not_aggregated()?;
+                value.num_records
+            },
+            ValueProperties::Hashmap(value) => value.num_records,
+            _ => return Err("data: must not be hashmap".into())
+        };
 
         match sensitivity_type {
             SensitivitySpace::KNorm(_k) => {
@@ -69,9 +75,7 @@ impl Aggregator for proto::Count {
                 use proto::privacy_definition::Neighboring;
                 use proto::privacy_definition::Neighboring::{Substitute, AddRemove};
                 let neighboring_type = Neighboring::from_i32(privacy_definition.neighboring)
-                    .ok_or::<Error>("neighboring definition must be either \"AddRemove\" or \"Substitute\"".into())?;
-
-                let num_records = data_property.num_records;
+                    .ok_or_else(|| Error::from("neighboring definition must be either \"AddRemove\" or \"Substitute\""))?;
 
                 // SENSITIVITY DERIVATIONS
                 let sensitivity: f64 = match (neighboring_type, num_records) {
@@ -86,7 +90,7 @@ impl Aggregator for proto::Count {
                 };
                 Ok(arr1(&[sensitivity]).into_dyn().into())
             },
-            _ => return Err("Count sensitivity is only implemented for KNorm".into())
+            _ => Err("Count sensitivity is only implemented for KNorm".into())
         }
     }
 }

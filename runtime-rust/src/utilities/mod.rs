@@ -7,9 +7,128 @@ use whitenoise_validator::errors::*;
 use openssl::rand::rand_bytes;
 use ieee754::Ieee754;
 
-use ndarray::{ArrayD};
+use ndarray::{ArrayD, Zip, Axis};
 
 use rug::Float;
+use std::cmp::Ordering;
+
+
+/// Broadcast left and right to match each other, and map an operator over the pairs
+///
+/// # Arguments
+/// * `left` - left vector to map over
+/// * `right` - right vector to map over
+/// * `operator` - function to apply to each pair
+///
+/// # Return
+/// An array of mapped data
+///
+/// # Example
+/// ```
+/// use whitenoise_validator::errors::*;
+/// use ndarray::prelude::*;
+/// use whitenoise_runtime::utilities::broadcast_map;
+/// let left: ArrayD<f64> = arr1(&[1., -2., 3., 5.]).into_dyn();
+/// let right: ArrayD<f64> = arr1(&[2.]).into_dyn();
+/// let mapped: Result<ArrayD<f64>> = broadcast_map(&left, &right, &|l, r| l.max(r.clone()));
+/// println!("{:?}", mapped); // [2., 2., 3., 5.]
+/// ```
+pub fn broadcast_map<T, U>(
+    left: &ArrayD<T>,
+    right: &ArrayD<T>,
+    operator: &dyn Fn(&T, &T) -> U) -> Result<ArrayD<U>> where T: std::clone::Clone, U: Default {
+    let shape = match left.ndim().cmp(&right.ndim()) {
+        Ordering::Less => right.shape(),
+        Ordering::Equal => if left.len() > right.len() { left.shape() } else { right.shape() },
+        Ordering::Greater => left.shape()
+    };
+
+//    println!("shape {:?}", shape);
+//    println!("left shape {:?}", left.shape());
+//    println!("right shape {:?}", right.shape());
+    // TODO: switch to array views to prevent the clone()
+    let left = to_nd(left.clone(), &shape.len())?;
+    let right = to_nd(right.clone(), &shape.len())?;
+
+//    println!("shape {:?}", shape);
+//    println!("left shape {:?}", left.shape());
+//    println!("right shape {:?}", right.shape());
+//    println!();
+
+    let mut output: ArrayD<U> = ndarray::Array::default(shape);
+    Zip::from(&mut output)
+        .and(left.broadcast(shape).ok_or("could not broadcast left argument")?)
+        .and(right.broadcast(shape).ok_or("could not broadcast right argument")?)
+        .apply(|acc, l, r| *acc = operator(&l, &r));
+
+    Ok(output)
+}
+
+
+#[cfg(test)]
+mod broadcast_map_tests {
+    use ndarray::{arr0, arr1, arr2};
+    use crate::utilities::broadcast_map;
+
+    #[test]
+    fn test_broadcasting() {
+        let data0d = arr0(2.).into_dyn();
+        let data1d = arr1(&[2., 3., 5.]).into_dyn();
+        let data2d = arr2(&[[2., 4.], [3., 7.], [5., 2.]]).into_dyn();
+
+        assert!(broadcast_map(
+            &data0d, &data1d, &|l, r| l * r,
+        ).unwrap() == arr1(&[4., 6., 10.]).into_dyn());
+
+        assert!(broadcast_map(
+            &data1d, &data2d, &|l, r| l / r,
+        ).unwrap() == arr2(&[[1., 2./4.], [1., 3./7.], [1., 5. / 2.]]).into_dyn());
+
+        assert!(broadcast_map(
+            &data2d, &data0d, &|l, r| l + r,
+        ).unwrap() == arr2(&[[4., 6.], [5., 9.], [7., 4.]]).into_dyn());
+    }
+
+    #[test]
+    fn non_conformable() {
+        let left = arr1(&[2., 3., 5.]).into_dyn();
+        let right = arr1(&[2., 3., 5., 6.]).into_dyn();
+
+        assert!(broadcast_map(
+            &left, &right, &|l, r| l * r,
+        ).is_err());
+    }
+
+    #[test]
+    #[should_panic]
+    fn arraynd_left_broadcast() {
+        // if this test doesn't panic, then ndarray has added support for left broadcasting
+        // once ndarray has support for left broadcasting, then evaluate removal of broadcast_map wherever possible
+        let left = arr0(2.).into_dyn();
+        let right = arr1(&[2., 3., 5., 6.]).into_dyn();
+
+        let _broadcast = left / right;
+    }
+}
+
+pub fn to_nd<T>(mut array: ArrayD<T>, ndim: &usize) -> Result<ArrayD<T>> {
+    match (*ndim as i32) - (array.ndim() as i32) {
+        0 => {}
+        // must remove i axes
+        i if i < 0 => {
+            (0..-(i as i32)).map(|_| match array.shape().last()
+                .ok_or_else(|| Error::from("ndim may not be negative"))? {
+                1 => Ok(array.index_axis_inplace(Axis(array.ndim() - 1), 0)),
+                _ => Err("cannot remove non-singleton trailing axis".into())
+            }).collect::<Result<()>>()?
+        }
+        // must add i axes
+        i if i > 0 => (0..i).for_each(|_| array.insert_axis_inplace(Axis(array.ndim()))),
+        _ => return Err("invalid dimensionality".into())
+    };
+
+    Ok(array)
+}
 
 
 /// Return bytes of binary data as `String`.
@@ -151,7 +270,7 @@ pub fn sample_from_set<T>(candidate_set: &Vec<T>, weights: &Vec<f64>)
     // generate cumulative probability distribution
     let mut cumulative_probability_vec: Vec<rug::Float> = Vec::with_capacity(weights.len() as usize);
     for i in 0..weights.len() {
-        cumulative_probability_vec.push( Float::with_val(53, Float::sum(probabilities[0..(i+1)].iter())) );
+        cumulative_probability_vec.push(Float::with_val(53, Float::sum(probabilities[0..(i + 1)].iter())));
     }
 
     // sample an element relative to its probability

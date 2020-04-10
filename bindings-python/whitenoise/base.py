@@ -19,7 +19,7 @@ with open(variant_message_map_path, 'r') as variant_message_map_file:
     variant_message_map = json.load(variant_message_map_file)
 
 
-def privacy_usage(epsilon=None, delta=None):
+def privacy_usage(epsilon=None, delta=0):
     # upgrade epsilon/delta to lists if they aren't already
     if epsilon is not None and not issubclass(type(epsilon), list):
         epsilon = [epsilon]
@@ -52,7 +52,9 @@ def privacy_usage(epsilon=None, delta=None):
 
 
 class Dataset(object):
-    def __init__(self, *, path=None, value=None, num_columns=None, column_names=None, value_format=None, private=True):
+    def __init__(self, *, path=None, value=None,
+                 num_columns=None, column_names=None,
+                 value_format=None, skip_row=True, private=True):
 
         global context
         if not context:
@@ -81,7 +83,8 @@ class Dataset(object):
                                    options={
                                        "data_source": value_pb2.DataSource(**data_source),
                                        "private": private,
-                                       "dataset_id": value_pb2.I64Null(option=self.dataset_id)
+                                       "dataset_id": value_pb2.I64Null(option=self.dataset_id),
+                                       "skip_row": skip_row
                                    })
 
     def __getitem__(self, identifier):
@@ -183,8 +186,8 @@ class Component(object):
 
     def __truediv__(self, other):
         return Component('Divide', arguments={
-            'left': Component('Cast', arguments={'data': self, "type": Component.of("FLOAT")}),
-            'right': Component('Cast', arguments={'data': Component.of(other), "type": Component.of("FLOAT")})})
+            'left': Component('Cast', arguments={'data': self}, options={"type": "float"}),
+            'right': Component('Cast', arguments={'data': Component.of(other)}, options={"type": "float"})})
 
     def __rtruediv__(self, other):
         return Component('Divide', arguments={'left': Component.of(other), 'right': self})
@@ -196,7 +199,7 @@ class Component(object):
         return Component('Modulo', arguments={'left': Component.of(other), 'right': self})
 
     def __pow__(self, power, modulo=None):
-        return Component('Power', arguments={'left': self, 'right': Component.of(power)})
+        return Component('Power', arguments={'data': self, 'radical': Component.of(power)})
 
     def __rpow__(self, other):
         return Component('Power', arguments={'left': Component.of(other), 'right': self})
@@ -275,6 +278,10 @@ class Component(object):
         if value is None:
             return
 
+        # count can take the entire dataset as an argument
+        if type(value) == Dataset:
+            value = value.component
+
         if type(value) == Component:
             return value
 
@@ -301,6 +308,8 @@ class Component(object):
                     "min": min_component,
                     "max": max_component
                 })
+
+                # TODO: imputation on ints is unnecessary
                 arguments[argument] = Component('Impute', arguments={
                     "data": arguments[argument]
                 })

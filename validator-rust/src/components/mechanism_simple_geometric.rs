@@ -8,7 +8,7 @@ use crate::components::{Aggregator};
 use crate::{proto, base};
 
 use crate::components::{Component, Expandable};
-use crate::base::{Value, NodeProperties, SensitivitySpace, ValueProperties};
+use crate::base::{Value, SensitivitySpace, ValueProperties, DataType};
 use crate::utilities::{prepend, expand_mechanism};
 
 
@@ -24,8 +24,12 @@ impl Component for proto::SimpleGeometricMechanism {
             .ok_or("data: missing")?.array()
             .map_err(prepend("data:"))?.clone();
 
+        if data_property.data_type != DataType::I64 {
+            return Err("data: atomic type must be integer".into())
+        }
+
         let aggregator = data_property.aggregator.clone()
-            .ok_or::<Error>("aggregator: missing".into())?;
+            .ok_or_else(|| Error::from("aggregator: missing"))?;
 
         // sensitivity must be computable
         aggregator.component.compute_sensitivity(
@@ -35,15 +39,11 @@ impl Component for proto::SimpleGeometricMechanism {
 
         data_property.aggregator = None;
         data_property.releasable = true;
+
         Ok(data_property.into())
     }
 
-    fn get_names(
-        &self,
-        _properties: &NodeProperties,
-    ) -> Result<Vec<String>> {
-        Err("get_names not implemented".into())
-    }
+
 }
 
 

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use crate::{proto, base};
 
 use crate::components::{Component, Aggregator};
-use crate::base::{Value, NodeProperties, AggregatorProperties, SensitivitySpace, ValueProperties};
+use crate::base::{Value, NodeProperties, AggregatorProperties, SensitivitySpace, ValueProperties, DataType};
 use crate::utilities::prepend;
 use ndarray::prelude::*;
 
@@ -20,6 +20,7 @@ impl Component for proto::Mean {
         let mut data_property = properties.get("data")
             .ok_or("data: missing")?.array()
             .map_err(prepend("data:"))?.clone();
+        data_property.assert_is_not_aggregated()?;
 
         // save a snapshot of the state when aggregating
         data_property.aggregator = Some(AggregatorProperties {
@@ -27,20 +28,20 @@ impl Component for proto::Mean {
             properties: properties.clone(),
         });
 
+        if data_property.data_type != DataType::F64 {
+            return Err("data: atomic type must be float".into())
+        }
+
         data_property.num_records = Some(1);
 
         Ok(data_property.into())
     }
 
-    fn get_names(
-        &self,
-        _properties: &NodeProperties,
-    ) -> Result<Vec<String>> {
-        Err("get_names not implemented".into())
-    }
+
 }
 
 impl Aggregator for proto::Mean {
+    /// Mean sensitivities [are backed by the the proofs here](https://github.com/opendifferentialprivacy/whitenoise-core/blob/955703e3d80405d175c8f4642597ccdf2c00332a/whitepapers/sensitivities/mean/mean.pdf).
     fn compute_sensitivity(
         &self,
         _privacy_definition: &proto::PrivacyDefinition,

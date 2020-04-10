@@ -6,12 +6,11 @@ use std::collections::HashMap;
 use crate::{proto, base};
 
 use crate::components::{Component, Aggregator};
-use crate::base::{Value, NodeProperties, AggregatorProperties, SensitivitySpace, ValueProperties};
-use crate::utilities::prepend;
+use crate::base::{Value, NodeProperties, AggregatorProperties, SensitivitySpace, ValueProperties, DataType};
+use crate::utilities::{prepend, is_conformable};
 use ndarray::prelude::*;
 
 impl Component for proto::Covariance {
-    // modify min, max, n, categories, is_public, non-null, etc. based on the arguments and component
     fn propagate_property(
         &self,
         _privacy_definition: &proto::PrivacyDefinition,
@@ -23,6 +22,7 @@ impl Component for proto::Covariance {
                 .ok_or("data: missing")?.array()
                 .map_err(prepend("data:"))?.clone();
 
+            data_property.assert_is_not_aggregated()?;
             // save a snapshot of the state when aggregating
             data_property.aggregator = Some(AggregatorProperties {
                 component: proto::component::Variant::from(self.clone()),
@@ -33,9 +33,12 @@ impl Component for proto::Covariance {
             data_property.num_records = Some(1);
             data_property.num_columns = Some(num_columns * (num_columns + 1) / 2);
 
+            if data_property.data_type != DataType::F64 {
+                return Err("data: atomic type must be float".into())
+            }
             // min/max of data is not known after computing covariance
             data_property.nature = None;
-            return Ok(data_property.into());
+            Ok(data_property.into())
         } else if properties.contains_key("left") && properties.contains_key("right") {
             let mut left_property = properties.get("left")
                 .ok_or("left: missing")?.array()
@@ -45,17 +48,24 @@ impl Component for proto::Covariance {
                 .ok_or("right: missing")?.array()
                 .map_err(prepend("right:"))?.clone();
 
+
+            if left_property.data_type != DataType::F64 {
+                return Err("left: atomic type must be float".into())
+            }
+            if right_property.data_type != DataType::F64 {
+                return Err("right: atomic type must be float".into())
+            }
+            left_property.assert_is_not_aggregated()?;
+            right_property.assert_is_not_aggregated()?;
+
             // save a snapshot of the state when aggregating
             left_property.aggregator = Some(AggregatorProperties {
                 component: proto::component::Variant::from(self.clone()),
                 properties: properties.clone(),
             });
 
-            let left_n = left_property.num_records()?;
-            let right_n = right_property.num_records()?;
-
-            if left_n != right_n {
-                return Err("n for left and right must be equivalent".into());
+            if !is_conformable(&left_property, &right_property) {
+                return Err("left and right property must be known to be conformable statically".into())
             }
 
             left_property.nature = None;
@@ -64,21 +74,15 @@ impl Component for proto::Covariance {
             left_property.num_records = Some(1);
             left_property.num_columns = Some(left_property.num_columns()? * right_property.num_columns()?);
 
-            return Ok(left_property.into());
+            Ok(left_property.into())
         } else {
-            return Err("either \"data\" for covariance, or \"left\" and \"right\" for cross-covariance must be supplied".into());
+            Err("either \"data\" for covariance, or \"left\" and \"right\" for cross-covariance must be supplied".into())
         }
-    }
-
-    fn get_names(
-        &self,
-        _properties: &NodeProperties,
-    ) -> Result<Vec<String>> {
-        Err("get_names not implemented".into())
     }
 }
 
 impl Aggregator for proto::Covariance {
+    /// Covariance sensitivities [are backed by the the proofs here](https://github.com/opendifferentialprivacy/whitenoise-core/blob/955703e3d80405d175c8f4642597ccdf2c00332a/whitepapers/sensitivities/covariance/covariance.pdf).
     fn compute_sensitivity(
         &self,
         privacy_definition: &proto::PrivacyDefinition,
@@ -108,7 +112,7 @@ impl Aggregator for proto::Covariance {
                                 .filter(|(j, _)| i <= *j)
                                 .map(|(_, (right_min, right_max))|
                                     (*left_max - *left_min) * (*right_max - *right_min))
-                                .collect::<Vec<f64>>()).flat_map(|s| s).collect::<Vec<f64>>()
+                                .collect::<Vec<f64>>()).flatten().collect::<Vec<f64>>()
                     },
                     (None, Some(left_property), Some(right_property)) => {
 
@@ -137,12 +141,12 @@ impl Aggregator for proto::Covariance {
                         data_n = left_n as f64;
 
                         // collect bound differences for entire matrix
-                        left_min.clone().iter().zip(left_max.clone())
+                        left_min.iter().zip(left_max.iter())
                             .map(|(left_min, left_max)| right_min.iter().zip(right_max.iter())
                                 .map(|(right_min, right_max)|
                                     (left_max - *left_min) * (right_max - *right_min))
                                 .collect::<Vec<f64>>())
-                            .flat_map(|s| s).collect::<Vec<f64>>()
+                            .flatten().collect::<Vec<f64>>()
                     }
                     _ => return Err("either \"data\" or \"left\" and \"right\" must be supplied".into())
                 };
@@ -152,7 +156,7 @@ impl Aggregator for proto::Covariance {
 
                 use proto::privacy_definition::Neighboring;
                 let neighboring_type = Neighboring::from_i32(privacy_definition.neighboring)
-                    .ok_or::<Error>("neighboring definition must be either \"AddRemove\" or \"Substitute\"".into())?;
+                    .ok_or_else(|| Error::from("neighboring definition must be either \"AddRemove\" or \"Substitute\""))?;
 
                 let scaling_constant: f64 = match k {
                     1 | 2 => match neighboring_type {
@@ -166,7 +170,10 @@ impl Aggregator for proto::Covariance {
                     .map(|difference| (difference * scaling_constant).powi(*k as i32))
                     .collect::<Vec<f64>>();
 
-                Ok(Array::from(row_sensitivity).into_dyn().into())
+                let mut array_sensitivity = Array::from(row_sensitivity).into_dyn();
+                array_sensitivity.insert_axis_inplace(Axis(0));
+
+                Ok(array_sensitivity.into())
             },
             _ => Err("Covariance sensitivity is only implemented for KNorm".into())
         }

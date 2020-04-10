@@ -8,7 +8,7 @@ use crate::components::{Aggregator};
 use crate::{proto, base};
 
 use crate::components::{Component, Expandable};
-use crate::base::{Value, NodeProperties, SensitivitySpace, ValueProperties};
+use crate::base::{Value, SensitivitySpace, ValueProperties};
 use crate::utilities::{prepend, expand_mechanism};
 
 
@@ -25,7 +25,7 @@ impl Component for proto::ExponentialMechanism {
             .map_err(prepend("data:"))?.clone();
 
         let aggregator = data_property.aggregator.clone()
-            .ok_or::<Error>("aggregator: missing".into())?;
+            .ok_or_else(|| Error::from("aggregator: missing"))?;
 
         // sensitivity must be computable
         aggregator.component.compute_sensitivity(
@@ -37,12 +37,7 @@ impl Component for proto::ExponentialMechanism {
         Ok(data_property.into())
     }
 
-    fn get_names(
-        &self,
-        _properties: &NodeProperties,
-    ) -> Result<Vec<String>> {
-        Err("get_names not implemented".into())
-    }
+
 }
 
 

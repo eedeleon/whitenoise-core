@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use crate::{proto, base};
 
 use crate::components::{Component, Aggregator};
-use crate::base::{Value, NodeProperties, AggregatorProperties, SensitivitySpace, ValueProperties};
+use crate::base::{Value, NodeProperties, AggregatorProperties, SensitivitySpace, ValueProperties, DataType};
 use crate::utilities::prepend;
 use ndarray::prelude::*;
 
@@ -20,7 +20,6 @@ impl Component for proto::Maximum {
         let mut data_property = properties.get("data")
             .ok_or("data: missing")?.array()
             .map_err(prepend("data:"))?.clone();
-
         data_property.assert_is_not_aggregated()?;
 
         // save a snapshot of the state when aggregating
@@ -29,17 +28,16 @@ impl Component for proto::Maximum {
             properties: properties.clone()
         });
 
+        if data_property.data_type != DataType::F64 && data_property.data_type != DataType::I64 {
+            return Err("data: atomic type must be numeric".into())
+        }
+
         data_property.num_records = Some(1);
 
         Ok(data_property.into())
     }
 
-    fn get_names(
-        &self,
-        _properties: &NodeProperties,
-    ) -> Result<Vec<String>> {
-        Err("get_names not implemented".into())
-    }
+
 }
 
 impl Aggregator for proto::Maximum {
@@ -69,7 +67,7 @@ impl Aggregator for proto::Maximum {
 
                 Ok(Array::from(row_sensitivity).into_dyn().into())
             },
-            _ => return Err("Maximum sensitivity is only implemented for KNorm of 1".into())
+            _ => Err("Maximum sensitivity is only implemented for KNorm of 1".into())
         }
     }
 }

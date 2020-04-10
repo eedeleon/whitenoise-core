@@ -5,42 +5,14 @@ use std::collections::HashMap;
 
 use crate::{proto, base};
 use crate::hashmap;
-use crate::components::{Component, Expandable, Report};
+use crate::components::{Expandable, Report};
 
 
-use crate::base::{NodeProperties, Value, ValueProperties};
+use crate::base::{NodeProperties, Value};
 use crate::utilities::json::{JSONRelease, AlgorithmInfo, privacy_usage_to_json, value_to_json};
 use crate::utilities::{prepend, broadcast_privacy_usage, get_ith_release};
 use serde_json;
 
-
-impl Component for proto::DpMean {
-    /// modify min, max, n, categories, is_public, non-null, etc. based on the arguments and component
-    /// # Arguments
-    /// * `&self` - this
-    /// * `_privacy_definition` - privacy definition from protocol buffer descriptor
-    /// * `_public_arguments` - HashMap of String/Value public arguments
-    /// * `properties` - NodeProperties
-    fn propagate_property(
-        &self,
-        _privacy_definition: &proto::PrivacyDefinition,
-        _public_arguments: &HashMap<String, Value>,
-        _properties: &base::NodeProperties,
-    ) -> Result<ValueProperties> {
-        Err("DPMaximum is abstract, and has no property propagation".into())
-    }
-
-    /// Accessor method for names
-    /// # Arguments
-    /// * `&self` - this
-    /// * `_properties` - NodeProperties
-    fn get_names(
-        &self,
-        _properties: &NodeProperties,
-    ) -> Result<Vec<String>> {
-        Err("get_names not implemented".into())
-    }
-}
 
 impl Expandable for proto::DpMean {
     /// Expand component
@@ -59,14 +31,15 @@ impl Expandable for proto::DpMean {
         component_id: &u32,
         maximum_id: &u32,
     ) -> Result<proto::ComponentExpansion> {
-        let mut current_id = maximum_id.clone();
+        let mut current_id = *maximum_id;
         let mut computation_graph: HashMap<u32, proto::Component> = HashMap::new();
 
         // mean
         current_id += 1;
-        let id_mean = current_id.clone();
+        let id_mean = current_id;
         computation_graph.insert(id_mean, proto::Component {
-            arguments: hashmap!["data".to_owned() => *component.arguments.get("data").ok_or::<Error>("data must be provided as an argument".into())?],
+            arguments: hashmap!["data".to_owned() => *component.arguments.get("data")
+                .ok_or_else(|| Error::from("data must be provided as an argument"))?],
             variant: Some(proto::component::Variant::Mean(proto::Mean {})),
             omit: true,
             batch: component.batch,
@@ -107,7 +80,8 @@ impl Report for proto::DpMean {
         component: &proto::Component,
         _public_arguments: &HashMap<String, Value>,
         properties: &NodeProperties,
-        release: &Value
+        release: &Value,
+        variable_names: Option<&Vec<String>>,
     ) -> Result<Option<Vec<JSONRelease>>> {
 
         let data_property = properties.get("data")
@@ -123,19 +97,23 @@ impl Report for proto::DpMean {
         let num_columns = data_property.num_columns()?;
         let privacy_usages = broadcast_privacy_usage(&self.privacy_usage, num_columns as usize)?;
 
-        for column_number in 0..num_columns {
+        for column_number in 0..(num_columns as usize) {
+            let variable_name = variable_names
+                .and_then(|names| names.get(column_number)).cloned()
+                .unwrap_or_else(|| "[Unknown]".to_string());
+
             releases.push(JSONRelease {
                 description: "DP release information".to_string(),
                 statistic: "DPMean".to_string(),
-                variables: serde_json::json!(Vec::<String>::new()),
+                variables: serde_json::json!(variable_name),
                 release_info: value_to_json(&get_ith_release(
                     release.array()?.f64()?,
                     &(column_number as usize)
                 )?.into())?,
-                privacy_loss: privacy_usage_to_json(&privacy_usages[column_number as usize].clone()),
+                privacy_loss: privacy_usage_to_json(&privacy_usages[column_number].clone()),
                 accuracy: None,
                 batch: component.batch as u64,
-                node_id: node_id.clone() as u64,
+                node_id: *node_id as u64,
                 postprocess: false,
                 algorithm_info: AlgorithmInfo {
                     name: "".to_string(),
@@ -144,8 +122,8 @@ impl Report for proto::DpMean {
                     argument: serde_json::json!({
                         "n": num_records,
                         "constraint": {
-                            "lowerbound": minimums[column_number as usize],
-                            "upperbound": maximums[column_number as usize]
+                            "lowerbound": minimums[column_number],
+                            "upperbound": maximums[column_number]
                         }
                     })
                 }

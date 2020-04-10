@@ -35,11 +35,11 @@ mod kth_raw_sample_moment;
 mod maximum;
 mod materialize;
 mod minimum;
-mod partition;
+//mod partition;
 mod quantile;
 mod reshape;
 mod mean;
-mod mechanism_exponential;
+//mod mechanism_exponential;
 mod mechanism_gaussian;
 mod mechanism_laplace;
 mod mechanism_simple_geometric;
@@ -50,9 +50,11 @@ mod variance;
 
 use std::collections::HashMap;
 
-use crate::base::{Value, NodeProperties, SensitivitySpace, ValueProperties};
+use crate::base::{Value, NodeProperties, SensitivitySpace, ValueProperties, Array};
 use crate::proto;
 use crate::utilities::json::{JSONRelease};
+use crate::utilities::get_ith_release;
+use ndarray::ArrayD;
 
 /// Universal Component trait
 ///
@@ -81,12 +83,6 @@ pub trait Component {
         public_arguments: &HashMap<String, Value>,
         properties: &NodeProperties,
     ) -> Result<ValueProperties>;
-
-    /// Utility function for a recursive algorithm to derive human readable names on the columns in the output data.
-    fn get_names(
-        &self,
-        properties: &NodeProperties,
-    ) -> Result<Vec<String>>;
 }
 
 /// Expandable Component trait
@@ -174,8 +170,23 @@ pub trait Report {
         component: &proto::Component,
         public_arguments: &HashMap<String, Value>,
         properties: &NodeProperties,
-        release: &Value
+        release: &Value,
+        variable_names: Option<&Vec<String>>,
     ) -> Result<Option<Vec<JSONRelease>>>;
+}
+
+/// Named component trait
+///
+/// Named components involve variables and keep track of the human readable names for these variables
+/// and may modify these variables names.
+pub trait Named {
+    /// Propagate the human readable names of the variables associated with this component
+    fn get_names(
+        &self,
+        public_arguments: &HashMap<String, Value>,
+        argument_variables: &HashMap<String, Vec<String>>,
+        release: &Option<&Value>
+    ) -> Result<Vec<String>>;
 }
 
 
@@ -207,12 +218,9 @@ impl Component for proto::component::Variant {
             // INSERT COMPONENT LIST
             Bin, Cast, Clamp, Count, Covariance, Digitize,
 
-            DpCount, DpCovariance, DpHistogram, DpMaximum, DpMean, DpMedian, DpMinimum,
-            DpMomentRaw, DpSum, DpVariance,
-
             Filter, Histogram, Impute, Index, KthRawSampleMoment, Materialize, Maximum, Mean,
 
-            ExponentialMechanism, GaussianMechanism, LaplaceMechanism, SimpleGeometricMechanism,
+            GaussianMechanism, LaplaceMechanism, SimpleGeometricMechanism,
 
             Minimum, Quantile, Reshape, Resize, Sum, Variance,
 
@@ -220,34 +228,7 @@ impl Component for proto::component::Variant {
             Equal, LessThan, GreaterThan, Negative
         );
 
-        return Err(format!("proto component {:?} is missing its Component trait", self).into())
-    }
-
-    fn get_names(
-        &self,
-        _properties: &NodeProperties,
-    ) -> Result<Vec<String>> {
-
-        macro_rules! get_names{
-            ($( $variant:ident ),*) => {
-                {
-                    $(
-                       if let proto::component::Variant::$variant(x) = self {
-                            return x.get_names(properties)
-                                .chain_err(|| format!("node specification {:?}:", self))
-                       }
-                    )*
-                }
-            }
-        }
-
-        get_names!(
-            // INSERT COMPONENT LIST
-//            Rowmin, Dpmean, Impute
-        );
-        // TODO: default implementation
-
-        Err("get_names not implemented".into())
+        Err(format!("proto component {:?} is missing its Component trait", self).into())
     }
 }
 
@@ -278,11 +259,11 @@ impl Expandable for proto::component::Variant {
 
         expand_component!(
             // INSERT COMPONENT LIST
-            Clamp, DpCount, DpCovariance, DpHistogram, DpMaximum, DpMean, DpMedian, DpMinimum,
-            DpMomentRaw, DpSum, DpVariance, Histogram, Impute, ExponentialMechanism, GaussianMechanism,
+            Clamp, Digitize, DpCount, DpCovariance, DpHistogram, DpMaximum, DpMean, DpMedian,
+            DpMinimum, DpMomentRaw, DpSum, DpVariance, Histogram, Impute, GaussianMechanism,
             LaplaceMechanism, SimpleGeometricMechanism, Resize,
 
-            Modulo
+            ToBool, ToFloat, ToInt, ToString
         );
 
         // no expansion
@@ -400,7 +381,8 @@ impl Report for proto::component::Variant {
         component: &proto::Component,
         public_arguments: &HashMap<String, Value>,
         properties: &NodeProperties,
-        release: &Value
+        release: &Value,
+        variable_names: Option<&Vec<String>>
     ) -> Result<Option<Vec<JSONRelease>>> {
 
         macro_rules! summarize{
@@ -408,7 +390,8 @@ impl Report for proto::component::Variant {
                 {
                     $(
                        if let proto::component::Variant::$variant(x) = self {
-                            return x.summarize(node_id, component, public_arguments, properties, release)
+                            return x.summarize(node_id, component, public_arguments,
+                                 properties, release, variable_names)
                                 .chain_err(|| format!("node specification: {:?}:", self))
                        }
                     )*
@@ -423,5 +406,85 @@ impl Report for proto::component::Variant {
         );
 
         Ok(None)
+    }
+}
+
+impl Named for proto::component::Variant {
+    /// Utility implementation on the enum containing all variants of a component.
+    ///
+    /// This utility delegates evaluation to the concrete implementation of each component variant.
+    fn get_names(
+        &self,
+        public_arguments: &HashMap<String, Value>,
+        argument_variables: &HashMap<String, Vec<String>>,
+        release: &Option<&Value>
+    ) -> Result<Vec<String>> {
+
+        macro_rules! get_names{
+            ($( $variant:ident ),*) => {
+                {
+                    $(
+                       if let proto::component::Variant::$variant(x) = self {
+                            return x.get_names(public_arguments, argument_variables, release)
+                                .chain_err(|| format!("node specification {:?}:", self))
+                       }
+                    )*
+                }
+            }
+        }
+
+        // TODO: transforms, covariance/cross-covariance, extended indexing
+        get_names!(
+            // INSERT COMPONENT LIST
+            Index, Literal, Materialize
+        );
+        
+        // default implementation
+        match argument_variables.get("data") {
+            // by convention, names pass through the "data" argument unchanged
+            Some(variable_names) => Ok(variable_names.clone()),
+            // otherwise if the component is non-standard, throw an error
+            None => Err(format!("names are not implemented for proto component {:?}", self).into())
+        }
+    }
+}
+
+impl Named for proto::Literal {
+    fn get_names(
+        &self,
+        _public_arguments: &HashMap<String, Value>,
+        _argument_variables: &HashMap<String, Vec<String>>,
+        release: &Option<&Value>
+    ) -> Result<Vec<String>> {
+
+        fn array_to_names<T: ToString + Clone + Default>(array: &ArrayD<T>, num_columns: i64) -> Result<Vec<String>> {
+            (0..num_columns as usize)
+                .map(|index| {
+                    let array = get_ith_release(array, &index)?;
+                    match array.ndim() {
+                        0 => match array.first() {
+                            Some(value) => Ok(value.to_string()),
+                            None => Err("array may not be empty".into())
+                        },
+                        1 => Ok("[Literal Column]".into()),
+                        _ => Err("array has too great of a dimension".into())
+                    }
+                })
+                .collect::<Result<Vec<String>>>()
+        }
+
+        match release {
+            Some(release) => match release {
+                Value::Jagged(jagged) => Ok((0..jagged.num_columns()).map(|_| "[Literal vector]".to_string()).collect()),
+                Value::Hashmap(_) => Err("names for hashmap literals are not supported".into()),  // (or necessary)
+                Value::Array(value) => match value {
+                    Array::F64(array) => array_to_names(array, value.num_columns()?),
+                    Array::I64(array) => array_to_names(array, value.num_columns()?),
+                    Array::Str(array) => array_to_names(array, value.num_columns()?),
+                    Array::Bool(array) => array_to_names(array, value.num_columns()?),
+                }
+            },
+            None => Err("Literals must always be accompanied by a release".into())
+        }
     }
 }

@@ -1,12 +1,11 @@
 {
   "arguments": {
     "data": {
-      "default": "None",
       "nature": [
         "continuous"
       ],
       "type": "Array",
-      "data": "Result to be released privately via the Gaussian mechanism."
+      "description": "Result to be released privately via the Gaussian mechanism."
     }
   },
   "id": "GaussianMechanism",

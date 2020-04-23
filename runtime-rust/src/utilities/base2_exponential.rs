@@ -187,22 +187,22 @@ pub fn randomized_round(x: f64, precision: u32, min_return: f64, max_return: f64
 
 pub fn normalized_sample(weights: Vec<Float>, precision: u32) -> usize {
     // get total weight
-    let total_weight = Float::with_val(53, Float::sum(weights.iter()));
+    let total_weight = Float::with_val(precision, Float::sum(weights.iter()));
 
     // generate cumulative weights
-    let mut cumulative_weight_vec: Vec<rug::Float> = (0..weights.len()).map(|i| Float::with_val(53, Float::sum(weights[0..(i+1)].iter()))).collect();
+    let mut cumulative_weight_vec: Vec<rug::Float> = (0..weights.len()).map(|i| Float::with_val(precision, Float::sum(weights[0..(i+1)].iter()))).collect();
 
     // get maximum power of two needed for sampling
     let mut pow_2: i64 = 0;
-    while (Float::with_val(53, pow_2)).exp2() > total_weight.to_f64() {
+    while (Float::with_val(precision, pow_2)).exp2() > total_weight {
         pow_2 = pow_2 - 1;
     }
-    while (Float::with_val(53, pow_2)).exp2() <= total_weight.to_f64() {
+    while (Float::with_val(precision, pow_2)).exp2() <= total_weight {
         pow_2 = pow_2 + 1;
     }
 
     // sample a random number from [0, 2^pow_2)
-    let mut s = Float::with_val(53, std::f64::MAX);
+    let mut s = Float::with_val(precision, std::f64::MAX);
     while s > total_weight {
         s = sample_uniform_bounded_pow_2(pow_2, precision);
     }
@@ -210,7 +210,7 @@ pub fn normalized_sample(weights: Vec<Float>, precision: u32) -> usize {
     // return the index of an element based on where it falls in the cumulative distribution of weights
     let mut index = 0;
     for i in 0..weights.len() {
-        if cumulative_weight_vec[i].to_f64() >= s {
+        if cumulative_weight_vec[i] >= s {
             index = i;
             break;
         }

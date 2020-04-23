@@ -1,9 +1,6 @@
 {
   "arguments": {
     "data": {
-      "nature": [
-        "continuous"
-      ],
       "type": "Array"
     }
   },
@@ -12,7 +9,7 @@
   "options": {
     "implementation": {
       "type": "string",
-      "default": "'Laplace'", 
+      "default": "'Laplace'",
       "description": "Privatizing mechanism to use."
     },
     "privacy_usage": {
@@ -22,9 +19,6 @@
     }
   },
   "return": {
-    "nature": [
-      "continuous"
-    ],
     "type": "Array",
     "description": "Differentially private sum over elements for each column of the data."
   },

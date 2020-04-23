@@ -1,9 +1,6 @@
 {
   "arguments": {
     "data": {
-      "nature": [
-        "continuous"
-      ],
       "type": "Array"
     }
   },
@@ -27,9 +24,6 @@
     }
   },
   "return": {
-    "nature": [
-      "continuous"
-    ],
     "type": "Array",
     "description": "Differentially private sample variance for each column of the data."
   },

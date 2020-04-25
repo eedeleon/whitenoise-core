@@ -66,21 +66,25 @@ impl Expandable for proto::DpCount {
         });
 
         // noising
-	let _component_math_impl_val = properties.clone().entry(String::from("implementation"));
-        computation_graph.insert(component_id.clone(), proto::Component {
-            arguments: hashmap![
-                "data".to_owned() => id_count,
-                "min".to_owned() => *component.arguments.get("min")
-                    .ok_or_else(|| Error::from("min must be provided as an argument"))?,
-                "max".to_owned() => count_max_id
-            ],
-            variant: Some(proto::component::Variant::from(proto::SimpleGeometricMechanism {
-                privacy_usage: self.privacy_usage.clone(),
-                enforce_constant_time: false
-            })),
-            omit: false,
-            batch: component.batch,
-        });
+	match self.mechanism.as_str() {
+	    "SimpleGeometric" =>
+		computation_graph.insert(component_id.clone(), proto::Component {
+
+		    arguments: hashmap![
+			"data".to_owned() => id_count,
+			"min".to_owned() => *component.arguments.get("min")
+			    .ok_or_else(|| Error::from("min must be provided as an argument"))?,
+			"max".to_owned() => count_max_id
+		    ],
+		    variant: Some(proto::component::Variant::from(proto::SimpleGeometricMechanism {
+			privacy_usage: self.privacy_usage.clone(),
+			enforce_constant_time: false
+		    })),
+		    omit: false,
+		    batch: component.batch,
+		}),
+	    _x => panic!("Unexpected invalid token {:?}", self.implementation.as_str()),
+	};
 
 
         Ok(proto::ComponentExpansion {
